@@ -277,7 +277,7 @@ function dlXLSX(){
   const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(data);
   ws['!cols']=[18,16,16,26,12,16,14,10,12].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb,ws,'Qargo Import');
-  XLSX.writeFile(wb,'qargo_import_'+(pdate||'export').replace(/\//g,'-')+'.xlsx');
+  XLSX.writeFile(wb,'VPK - Template import from SAP to Qargo.xlsx');
 }
 
 function dl(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
