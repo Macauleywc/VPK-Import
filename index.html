@@ -307,11 +307,13 @@ function dlXLSX(){
     ];
     vals.forEach((val,c)=>{
       const addr=XLSX.utils.encode_cell({r,c});
-      // Force text for dates and times (cols B,C,F,G = indices 1,2,5,6)
-      const forceText=[1,2,5,6].includes(c);
+      // Cols 1,2,5,6 (times+dates) and 0,3,4 (text) must be strings
+      // Only cols 7,8 (pallets, weight) are numbers
+      const isNum=[7,8].includes(c);
       ws[addr]={
-        t: forceText?'s': typeof val==='number'?'n':'s',
-        v: val,
+        t: isNum?'n':'s',
+        v: isNum?Number(val)||0:String(val||''),
+        w: isNum?undefined:String(val||''),
       };
     });
   });
