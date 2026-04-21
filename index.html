@@ -274,7 +274,18 @@ function dlCSV(){
 function dlXLSX(){
   const h=['Shipment Number','Planned time CheckIn','Collection Date','Name of the ship-to party','Postal Code','Planned date CheckIn','Delivery time','# pack. item level','Net weight'];
   const data=[h,...rows.map(r=>[r.ship,r.checkIn,r.collDate,r.customer,r.postal,r.planDate,r.delivTime,r.pallets,r.netWeight])];
-  const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(data);
+  const wb=XLSX.utils.book_new();
+  // Use {cellText:false, raw:false} so all values written as-is
+  const ws=XLSX.utils.aoa_to_sheet(data,{cellDates:false});
+  // Force date cols (C=2, F=5) and time cols (B=1, G=6) as plain text
+  // so Excel cannot reformat DD/MM/YYYY into its own date format
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let row=1;row<=range.e.r;row++){
+    [1,2,5,6].forEach(col=>{
+      const addr=XLSX.utils.encode_cell({r:row,c:col});
+      if(ws[addr]){ws[addr].t='s';delete ws[addr].z;}
+    });
+  }
   ws['!cols']=[18,16,16,26,12,16,14,10,12].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb,ws,'Qargo Import');
   XLSX.writeFile(wb,'VPK - Template import from SAP to Qargo.xlsx');
