@@ -293,7 +293,7 @@ function render(rows){
     <td class="tt">${r.collDate}</td><td class="tn">${esc(r.customer)}</td>
     <td class="tp">${esc(r.postal)}</td><td class="tt">${r.planDate}</td>
     <td class="tt">${r.delivTime||'—'}</td><td class="tnum">${r.pallets}</td>
-    <td class="tnum">${r.netWeight.toLocaleString()}</td></tr>`).join('');
+    <td class="tnum">${(r.netWeight||0).toLocaleString()}</td></tr>`).join('');
   document.getElementById('rc').textContent=rows.length+' row'+(rows.length!==1?'s':'');
   document.getElementById('ctrl').classList.add('show');
   document.getElementById('tw').classList.add('show');
@@ -485,6 +485,13 @@ function isDS(s){return/\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(s)||(!isNaN(
 let currentCustomer = 'vpk';
 const CUST_HINTS = {'vpk': 'VPK schedule selected — drop the file below', 'sam': 'SAM Mouldings selected — drop their Provisional Manifest file below', 'nestle': 'Nestlé selected — drop their schedule file below (upload template to configure)', 'instarmac': 'Instarmac selected — drop their schedule file below (upload template to configure)'};
 
+const DROP_TITLES = {
+  vpk:       'Drop your VPK Delivery Schedule here',
+  sam:       'Drop your SAM Mouldings Provisional Manifest here',
+  nestle:    'Drop your Nestlé schedule file here',
+  instarmac: 'Drop your Instarmac schedule file here',
+};
+
 function selectCustomer(btn, id) {
   currentCustomer = id;
   document.querySelectorAll('.cust-btn').forEach(b => {
@@ -497,6 +504,8 @@ function selectCustomer(btn, id) {
   btn.style.borderColor = 'var(--orange)';
   const hint = document.getElementById('cust-hint');
   if(hint) hint.textContent = CUST_HINTS[id]||'';
+  const title = document.getElementById('drop-title');
+  if(title) title.textContent = DROP_TITLES[id]||DROP_TITLES.vpk;
   reset();
 }
 
