@@ -364,10 +364,12 @@ function dlXLSX_Qargo(){
   }
   rows.forEach((row,ri)=>{
     const r=ri+1;
+    sc(ws,r,0, 'General');                              // transport_service
     sc(ws,r,4, String(row.customerCode||''));           // customer_code
     sc(ws,r,5, String(row.customer||''));               // customer_name
-    sc(ws,r,7, String(row.orderRef||row.ship||''));     // order_reference_number
-    sc(ws,r,49,String(row.delivRef||''));               // delivery_reference_number
+    sc(ws,r,7, String(row.loadNum||row.ship||''));      // order_reference_number = LOAD NUMBER (groups all stops as one job)
+    sc(ws,r,6, String(row.loadNum||row.ship||''));      // customer_reference_number = SAM Load No (e.g. LN04692)
+    sc(ws,r,63,String(row.delivRef||''));               // delivery_reference_number
     sc(ws,r,36,ds(row.pickupDate||row.collDate),'n','dd/mm/yyyy'); // pickup_date
     sc(ws,r,37,tf(row.pickupTime||row.checkIn),'n','h:mm');        // pickup_time_start
     sc(ws,r,38,tf(row.pickupTimeEnd),'n','h:mm');                  // pickup_time_end
