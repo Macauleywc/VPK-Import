@@ -693,14 +693,17 @@ function parseNestle(wb) {
   const data = XLSX.utils.sheet_to_json(ws, {defval:''});
   const out = [];
 
+  // Build index of all rows for prev-row lookup
+  const allRows = data;
+
   // Only process FG (loaded/delivery) rows AND exclude EL (empty leg) journey refs
-  const fgRows = data.filter(r => {
+  const fgRows = data.map((r, idx) => ({r, idx})).filter(({r}) => {
     const loadType = String(r['LoadType']||'').trim().toUpperCase();
     const jnyRef   = String(r['JnyRef']||'').trim().toUpperCase();
     return loadType === 'FG' && !jnyRef.startsWith('EL');
   });
 
-  fgRows.forEach(r => {
+  fgRows.forEach(({r, idx}) => {
     // Parse date and time from "DD/MM/YYYY HH:MM" format
     function splitDT(val) {
       const s = String(val||'').trim();
@@ -724,10 +727,13 @@ function parseNestle(wb) {
     const weightT   = parseFloat(r['Weight (T)'])||0;
     const weightKg  = Math.round(weightT * 1000);
 
-    // Pickup — look up full address from depot code
+    // Pickup — use depot lookup first, then fall back to previous row's CustAddr
     const fromRaw    = String(r['FromDesc']||'').trim();
     const pickupName = fromRaw.replace(/^[A-Z0-9]{2,4}\s*-\s*/,'').trim();
     const depotInfo  = nestleDepotLookup(fromRaw);
+    const prevRow    = idx > 0 ? allRows[idx-1] : null;
+    const prevAddr   = prevRow ? String(prevRow['CustAddr']||'').trim() : '';
+    const prevPc     = prevRow ? String(prevRow['CustPCode']||'').replace(/\+/g,' ').trim() : '';
 
     out.push({
       loadNum:        loadNo||colNo,   // LoadNo = individual job (e.g. Q166354)
