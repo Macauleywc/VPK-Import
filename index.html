@@ -544,9 +544,15 @@ function selectCustomer(btn, id) {
 ═══════════════════════════════ */
 function parseSAM(wb) {
   const ws = wb.Sheets[wb.SheetNames[0]];
-  if(!ws||!ws['!ref'])return[];
-  const ref = XLSX.utils.decode_range(ws['!ref']);
-  const R = ref.e.r;
+  if(!ws) return [];
+
+  // Calculate actual range from cell keys — ws['!ref'] can be wrong for inline string files
+  let maxRow = 0;
+  Object.keys(ws).filter(k=>!k.startsWith('!')).forEach(k => {
+    const decoded = XLSX.utils.decode_cell(k);
+    if(decoded.r > maxRow) maxRow = decoded.r;
+  });
+  const R = maxRow;
   const out = [];
 
   function cv(r,c){
