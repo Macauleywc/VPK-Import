@@ -543,10 +543,17 @@ function selectCustomer(btn, id) {
    Provisional Manifest format
 ═══════════════════════════════ */
 function parseSAM(wb) {
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  if(!ws) return [];
+  const wsRaw = wb.Sheets[wb.SheetNames[0]];
+  if(!wsRaw) return [];
 
-  // Calculate actual range from cell keys — ws['!ref'] can be wrong for inline string files
+  // Normalise cell keys to uppercase — some files use lowercase (e.g. b10 instead of B10)
+  const ws = {};
+  Object.keys(wsRaw).forEach(k => {
+    if(k.startsWith('!')) { ws[k] = wsRaw[k]; return; }
+    ws[k.toUpperCase()] = wsRaw[k];
+  });
+
+  // Calculate actual range from cell keys
   let maxRow = 0;
   Object.keys(ws).filter(k=>!k.startsWith('!')).forEach(k => {
     const decoded = XLSX.utils.decode_cell(k);
