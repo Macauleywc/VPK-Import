@@ -553,6 +553,8 @@ function parseSAM(wb) {
     const cell=ws[XLSX.utils.encode_cell({r,c})];
     if(!cell)return null;
     if(cell.t==='d')return cell.v;
+    // Handle inline strings (new manifest format)
+    if(cell.t==='s'&&cell.v===undefined&&cell.r) return cell.r.replace(/<[^>]+>/g,'').trim();
     return cell.v!==undefined?cell.v:null;
   }
   function cs(r,c){const v=cv(r,c);return v!==null&&v!==undefined?String(v).trim():'';}
@@ -585,7 +587,8 @@ function parseSAM(wb) {
   let curBlock = null;
 
   for(let r=0;r<=R;r++){
-    const c1=cs(r,1);
+    // Check both col B (index 1) and col A (index 0) for SO ref — differs between manifest versions
+    const c1=cs(r,1)||cs(r,0);
     if(/^SO-\d+/.test(c1)){
       if(!curBlock){
         curBlock={firstRow:r,lastRow:r,soRefs:[],city:'',postcode:'',delivDate:'',orderRefs:[]};
