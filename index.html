@@ -397,13 +397,22 @@ function dlXLSX_Qargo(){
     sc(ws,r,36,ds(row.pickupDate||row.collDate),'n','dd/mm/yyyy'); // pickup_date
     sc(ws,r,37,tf(row.pickupTime||row.checkIn||''),'n','h:mm');    // pickup_time_start
     sc(ws,r,38,tf(row.pickupTimeEnd),'n','h:mm');                  // pickup_time_end
-    // Pickup address — use row data if available (Nestle), else SAM defaults
-    sc(ws,r,40,String(row.pickupName||'SAM Mouldings'));
-    sc(ws,r,41,String(row.pickupAddress||'345 Torrington Ave, Coventry, CV4 9ZR'));
-    sc(ws,r,42,String(row.pickupLine1||'345 Torrington Ave'));
-    sc(ws,r,44,String(row.pickupPostcode||'CV4 9ZR'));
-    sc(ws,r,45,String(row.pickupCity||'Coventry'));
-    sc(ws,r,46,'GB');                                     // pickup_country
+    // Pickup address — SAM always Coventry, Nestle uses dynamic fields from CSV
+    if(currentCustomer === 'sam') {
+      sc(ws,r,40,'SAM Mouldings');
+      sc(ws,r,41,'345 Torrington Ave, Coventry, CV4 9ZR');
+      sc(ws,r,42,'345 Torrington Ave');
+      sc(ws,r,44,'CV4 9ZR');
+      sc(ws,r,45,'Coventry');
+      sc(ws,r,46,'GB');
+    } else {
+      sc(ws,r,40,String(row.pickupName||''));
+      sc(ws,r,41,String(row.pickupAddress||''));
+      sc(ws,r,42,String(row.pickupLine1||''));
+      sc(ws,r,44,String(row.pickupPostcode||''));
+      sc(ws,r,45,String(row.pickupCity||''));
+      sc(ws,r,46,'GB');
+    }
     sc(ws,r,50,String(row.delivName||row.customer||''));         // delivery_name = ToLoc / destination
     sc(ws,r,51,ds(row.delivDate||row.collDate),'n','dd/mm/yyyy'); // delivery_date
     sc(ws,r,52,tf(row.delivTimeStart),'n','h:mm');               // delivery_time_start
