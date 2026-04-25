@@ -834,8 +834,8 @@ function parseInstarmac(wb) {
     const city         = String(row[2]||'').trim();
     const postcode     = String(row[3]||'').trim();
     const delCol       = String(row[4]||'').trim(); // D=delivery, C=collection
-    const weight       = parseFloat(row[5])||0;
-    const pallets      = parseFloat(row[6])||0;
+    const weight       = parseFloat(String(row[5]||'').replace(/,/g,''))||0;
+    const pallets      = parseFloat(String(row[6]||'').replace(/,/g,''))||0;
     const openingTime  = String(row[7]||'').trim();
     const routeNo      = row[8] instanceof Date
       ? String(row[8].getDate()).padStart(2,'0')+'/'+String(row[8].getMonth()+1).padStart(2,'0')+'/'+row[8].getFullYear()
