@@ -186,8 +186,7 @@ function parse(wb){
   } else if(currentCustomer === 'nestle') {
     all.push(...parseNestle(wb));
   } else if(currentCustomer === 'instarmac') {
-    showErr('Instarmac format not yet configured. Please provide a sample schedule file.');
-    return;
+    all.push(...parseInstarmac(wb));
   } else {
     wb.SheetNames.forEach(sn=>{const ws=wb.Sheets[sn];if(ws&&ws['!ref'])all.push(...parseSheet(ws));});
   }
@@ -312,7 +311,7 @@ function dlCSV(){
 }
 
 function dlXLSX(){
-  if(currentCustomer === 'sam' || currentCustomer === 'nestle') { dlXLSX_Qargo(); return; }
+  if(currentCustomer === 'sam' || currentCustomer === 'nestle' || currentCustomer === 'instarmac') { dlXLSX_Qargo(); return; }
 
   // ── VPK export — 9-column VPK-specific Qargo template ──
   const b64 = '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';
@@ -396,22 +395,13 @@ function dlXLSX_Qargo(){
     sc(ws,r,36,ds(row.pickupDate||row.collDate),'n','dd/mm/yyyy'); // pickup_date
     sc(ws,r,37,tf(row.pickupTime||row.checkIn||''),'n','h:mm');    // pickup_time_start
     sc(ws,r,38,tf(row.pickupTimeEnd),'n','h:mm');                  // pickup_time_end
-    // Pickup address — SAM always Coventry, Nestle uses dynamic fields from CSV
-    if(currentCustomer === 'sam') {
-      sc(ws,r,40,'SAM Mouldings');
-      sc(ws,r,41,'345 Torrington Ave, Coventry, CV4 9ZR');
-      sc(ws,r,42,'345 Torrington Ave');
-      sc(ws,r,44,'CV4 9ZR');
-      sc(ws,r,45,'Coventry');
-      sc(ws,r,46,'GB');
-    } else {
-      sc(ws,r,40,String(row.pickupName||''));
-      sc(ws,r,41,String(row.pickupAddress||''));
-      sc(ws,r,42,String(row.pickupLine1||''));
-      sc(ws,r,44,String(row.pickupPostcode||''));
-      sc(ws,r,45,String(row.pickupCity||''));
-      sc(ws,r,46,'GB');
-    }
+    // Pickup address — per customer
+    sc(ws,r,40,String(row.pickupName||''));
+    sc(ws,r,41,String(row.pickupAddress||''));
+    sc(ws,r,42,String(row.pickupLine1||''));
+    sc(ws,r,44,String(row.pickupPostcode||''));
+    sc(ws,r,45,String(row.pickupCity||''));
+    sc(ws,r,46,'GB');
     sc(ws,r,50,String(row.delivName||row.customer||''));         // delivery_name = ToLoc / destination
     sc(ws,r,51,ds(row.delivDate||row.collDate),'n','dd/mm/yyyy'); // delivery_date
     sc(ws,r,52,tf(row.delivTimeStart),'n','h:mm');               // delivery_time_start
@@ -787,6 +777,115 @@ function parseNestle(wb) {
       checkIn:        arr.time,
       delivTime:      del.time,
       netWeight:      weightKg,
+    });
+  });
+
+  return out;
+}
+
+
+/* ═══════════════════════════════
+   INSTARMAC PARSER
+   Route schedule format
+   Groups by Route No — each route = one Qargo job
+   Repeating header rows are skipped
+═══════════════════════════════ */
+function parseInstarmac(wb) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if(!ws||!ws['!ref']) return [];
+
+  const data = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:false});
+  const out  = [];
+
+  // Parse time string e.g. "08:01-13:00" or "09:00am"
+  function parseTimeRange(val) {
+    if(!val) return {start:'', end:''};
+    const s = String(val).trim();
+    // Range format "HH:MM-HH:MM"
+    const rangeM = s.match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/);
+    if(rangeM) return {start: rangeM[1].padStart(5,'0'), end: rangeM[2].padStart(5,'0')};
+    // Single time "09:00am" or "09:00"
+    const ampm = s.match(/^(\d{1,2}):(\d{2})(am|pm)?$/i);
+    if(ampm) {
+      let h = parseInt(ampm[1]), m = parseInt(ampm[2]);
+      if(ampm[3]&&ampm[3].toLowerCase()==='pm'&&h<12) h+=12;
+      if(ampm[3]&&ampm[3].toLowerCase()==='am'&&h===12) h=0;
+      return {start: String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'), end:''};
+    }
+    return {start:'', end:''};
+  }
+
+  // Track current route and pickup date
+  // Instarmac file has no delivery date — use today or prompt
+  // Collection Time (col 11) = pickup time from Instarmac depot
+  // Pickup = Instarmac Group, Tamworth
+  const today = new Date();
+  const todayStr = String(today.getDate()).padStart(2,'0')+'/'+String(today.getMonth()+1).padStart(2,'0')+'/'+today.getFullYear();
+
+  data.forEach((row, ri) => {
+    if(!row || !row[0]) return;
+    // Skip header rows (col 0 = 'Order No')
+    if(String(row[0]).trim() === 'Order No') return;
+    // Skip rows where col 0 is not a number
+    const orderNo = parseInt(row[0]);
+    if(isNaN(orderNo)) return;
+
+    const customer     = String(row[1]||'').trim();
+    const city         = String(row[2]||'').trim();
+    const postcode     = String(row[3]||'').trim();
+    const delCol       = String(row[4]||'').trim(); // D=delivery, C=collection
+    const weight       = parseFloat(row[5])||0;
+    const pallets      = parseFloat(row[6])||0;
+    const openingTime  = String(row[7]||'').trim();
+    const routeNo      = row[8] instanceof Date
+      ? String(row[8].getDate()).padStart(2,'0')+'/'+String(row[8].getMonth()+1).padStart(2,'0')+'/'+row[8].getFullYear()
+      : String(row[8]||'').trim();
+    const moffet       = String(row[9]||'').trim();
+    const addInfo      = String(row[10]||'').trim();
+    const collTime     = String(row[11]||'').trim();
+
+    // Only process delivery rows
+    if(delCol.toUpperCase() !== 'D') return;
+
+    const delivTimes   = parseTimeRange(openingTime);
+    const pickupTimes  = parseTimeRange(collTime);
+
+    // Notes — include Moffet requirement and additional info
+    const notes = [
+      moffet.toUpperCase()==='Y' ? 'Moffet required' : '',
+      addInfo && addInfo.toLowerCase()!=='n/a' ? addInfo : '',
+    ].filter(Boolean).join('; ');
+
+    out.push({
+      loadNum:        String(routeNo),        // Route No = job grouping
+      ship:           String(routeNo),
+      orderRef:       String(routeNo),        // order_reference_number = Route No
+      jnyRef:         String(orderNo),        // customer_reference_number = Order No
+      delivRef:       String(orderNo),
+      customer:       customer,
+      customerCode:   'INSTARMAC',
+      pickupDate:     todayStr,
+      pickupTime:     pickupTimes.start,
+      pickupTimeEnd:  pickupTimes.end,
+      pickupName:     'Instarmac Group',
+      pickupAddress:  'Instarmac Group, Trinity Way, Tamworth, B78 3HG',
+      pickupLine1:    'Trinity Way',
+      pickupPostcode: 'B78 3HG',
+      pickupCity:     'Tamworth',
+      delivName:      customer,
+      delivDate:      todayStr,
+      delivTimeStart: delivTimes.start,
+      delivTimeEnd:   delivTimes.end,
+      delivAddress:   city,
+      delivCity:      city,
+      postal:         postcode,
+      pallets:        pallets,
+      weightKg:       weight,
+      delivNotes:     notes,
+      collDate:       todayStr,
+      checkIn:        pickupTimes.start,
+      delivTime:      delivTimes.start,
+      netWeight:      weight,
     });
   });
 
