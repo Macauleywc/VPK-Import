@@ -249,6 +249,9 @@ function parseSheet(ws){
       if(al.startsWith('cancelled')||al.startsWith('ex works'))continue;
       if(/^load\s*\d/i.test(al)||/^load\s*\d/i.test(bl))continue;
       if(al==='haulier / vehicle'||bl==='customer')continue;
+      const f=cs(r,5);
+      if(f.toLowerCase().startsWith('cancelled'))continue;
+      if(b&&!isNaN(Number(b))&&Number(Number(b))>100)continue;
       raw.push({a,b,c,e,iraw,k});
     }
 
