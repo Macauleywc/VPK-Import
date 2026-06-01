@@ -282,10 +282,9 @@ function parseSheet(ws){
         if(s&&/^\d{6,}$/.test(s)){ship=s;break;}
       }
       // Write delivery rows — carry postal code forward WITHIN this group only
-      // First find the first postal in this group so we only carry if the group has at least one
+      // If group has no postal at all, use NN15 5YT (Burton Latimer default for VPK no-postcode loads)
       const groupPostal=grp.find(rr=>rr.k)?true:false;
-      if(!groupPostal)return; // skip entire group if no postal exists anywhere in it
-      let lastPostal='';
+      let lastPostal=groupPostal?'':'NN15 5YT';
       grp.forEach(rr=>{
         if(!rr.b)return; // must have a customer name
         if(rr.k)lastPostal=rr.k; // update running postal for this group
