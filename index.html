@@ -278,14 +278,16 @@ function parseSheet(ws){
         const s=(rr.c||'').replace(/\s/g,'');
         if(s&&/^\d{6,}$/.test(s)){ship=s;break;}
       }
-      // Write delivery rows — carry postal code forward within the group
+      // Write delivery rows — carry postal code forward WITHIN this group only
+      // First find the first postal in this group so we only carry if the group has at least one
+      const groupPostal=grp.find(rr=>rr.k)?true:false;
+      if(!groupPostal)return; // skip entire group if no postal exists anywhere in it
       let lastPostal='';
       grp.forEach(rr=>{
         if(!rr.b)return; // must have a customer name
-        // Carry postal forward if this row has one, otherwise use last known
-        if(rr.k)lastPostal=rr.k;
-        const postal=rr.k||lastPostal;
-        if(!postal)return; // skip only if we truly have no postal for this group yet
+        if(rr.k)lastPostal=rr.k; // update running postal for this group
+        const postal=lastPostal; // use latest known postal within this group
+        if(!postal)return; // skip stops before we've seen the first postal in this group
         let pal=0;
         if(rr.iraw!==null&&rr.iraw!==undefined){
           const ps=String(rr.iraw).toLowerCase().trim();
