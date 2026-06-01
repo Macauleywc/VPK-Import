@@ -246,7 +246,8 @@ function parseSheet(ws){
       const al=a.toLowerCase(),bl=b.toLowerCase();
       if(!a&&!b&&!c&&!e&&!k)continue;
       if(al.startsWith('mileage')||bl.startsWith('mileage'))continue;
-      if(al.startsWith('load ')||bl.startsWith('load '))continue;
+      if(al.startsWith('cancelled')||al.startsWith('ex works'))continue;
+      if(/^load\s*\d/i.test(al)||/^load\s*\d/i.test(bl))continue;
       if(al==='haulier / vehicle'||bl==='customer')continue;
       raw.push({a,b,c,e,iraw,k});
     }
@@ -271,21 +272,26 @@ function parseSheet(ws){
         const t=extractTime(rr.a);
         if(t){checkIn=t;break;}
       }
-      // Get shipment number
+      // Get shipment number — scan entire group, carry first found
       let ship='';
       for(const rr of grp){
         const s=(rr.c||'').replace(/\s/g,'');
         if(s&&/^\d{6,}$/.test(s)){ship=s;break;}
       }
-      // Write delivery rows
+      // Write delivery rows — carry postal code forward within the group
+      let lastPostal='';
       grp.forEach(rr=>{
-        if(!rr.b||!rr.k)return;
+        if(!rr.b)return; // must have a customer name
+        // Carry postal forward if this row has one, otherwise use last known
+        if(rr.k)lastPostal=rr.k;
+        const postal=rr.k||lastPostal;
+        if(!postal)return; // skip only if we truly have no postal for this group yet
         let pal=0;
         if(rr.iraw!==null&&rr.iraw!==undefined){
           const ps=String(rr.iraw).toLowerCase().trim();
           if(ps!=='n/a'&&ps!=='na'&&ps!=='')if(!isNaN(Number(rr.iraw)))pal=Math.round(Number(rr.iraw));
         }
-        out.push({ship,checkIn,collDate:date,customer:rr.b.trim(),postal:rr.k.trim(),planDate:date,delivTime:extractFirst(rr.e),pallets:pal,netWeight:pal*200});
+        out.push({ship,checkIn,collDate:date,customer:rr.b.trim(),postal:postal.trim(),planDate:date,delivTime:extractFirst(rr.e),pallets:pal,netWeight:pal*200});
       });
     });
   });
