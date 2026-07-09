@@ -410,26 +410,28 @@ function parseEuroPool(wb){
   };
 
   const PALLETS_PER_LOAD=33;
+  const today=fd(new Date());
 
   data.forEach(r=>{
-    const salesDoc  =String(r['Sales Document']||'').trim();
-    const shipNum   =String(r['Shipment Number']||'').trim();
-    const aldiRDC   =String(r['Aldi RDC Collection point']||'').trim();
-    const loadingDate=r['Loading date'];
+    const reference  =String(r['REFERNENCE']||r['REFERENCE']||'').trim();
+    const reference2 =String(r['REFERENCE 2']||'').trim();
+    const collectPt  =String(r['COLLECT']||'').trim();
+    const deliverPt  =String(r['DELIVER']||'').trim();
 
-    if(!shipNum||!salesDoc) return;
-    if(isNaN(Number(shipNum))) return;
+    if(!reference) return;
+    if(isNaN(Number(reference))) return;
 
-    const collDate=serialToDate(loadingDate);
-    if(!pdate&&collDate) pdate=collDate;
+    const collDate=today;
+    if(!pdate) pdate=collDate;
 
-    const aldiSite=lookupAldi(aldiRDC);
+    const aldiSite=lookupAldi(collectPt);
+    const depot = /bardon/i.test(deliverPt) ? EUROPOOL_DEPOT : {...EUROPOOL_DEPOT, delivNotes:'Unexpected DELIVER value: '+deliverPt};
 
     out.push({
-      ship:           shipNum,
-      orderRef:       shipNum,
-      jnyRef:         salesDoc,
-      delivRef:       salesDoc,
+      ship:           reference,
+      orderRef:       reference,
+      jnyRef:         reference2||reference,
+      delivRef:       reference2||reference,
       customer:       'EuroPool',
       customerCode:   'EUROPOOL',
       pickupDate:     collDate,
@@ -440,14 +442,14 @@ function parseEuroPool(wb){
       pickupCity:     aldiSite.city,
       pickupTime:     '',
       pickupTimeEnd:  '',
-      delivName:      EUROPOOL_DEPOT.name,
+      delivName:      depot.name,
       delivDate:      collDate,
-      delivAddress:   EUROPOOL_DEPOT.address,
-      delivCity:      EUROPOOL_DEPOT.city,
-      postal:         EUROPOOL_DEPOT.postcode,
+      delivAddress:   depot.address,
+      delivCity:      depot.city,
+      postal:         depot.postcode,
       delivTimeStart: '',
       delivTimeEnd:   '',
-      delivNotes:     aldiSite.delivNotes||'',
+      delivNotes:     aldiSite.delivNotes||depot.delivNotes||'',
       collDate:       collDate,
       checkIn:        '',
       pallets:        PALLETS_PER_LOAD,
