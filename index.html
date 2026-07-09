@@ -364,14 +364,43 @@ function parseEuroPool(wb){
   const data=XLSX.utils.sheet_to_json(ws,{defval:''});
   const out=[];
 
-  // Hardcoded addresses
-  const ALDI_SAWLEY={
-    name:'Aldi Stores Limited Sawley DSP',
-    address:'Tamworth Rd, Derby, DE72 2HP',
-    line1:'Tamworth Rd',
-    city:'Derby',
-    postcode:'DE72 2HP'
-  };
+  // Aldi collection point lookup — matched against "Aldi RDC Collection point" column
+  const ALDI_SITES=[
+    {
+      keys:['sawley','derby'],
+      name:'Aldi Stores Limited Sawley DSP',
+      address:'Tamworth Rd, Derby, DE72 2HP',
+      line1:'Tamworth Rd',
+      city:'Derby',
+      postcode:'DE72 2HP'
+    },
+    {
+      keys:['atherstone'],
+      name:'Aldi Stores Limited Atherstone',
+      address:'Holly Ln, Atherstone, CV9 2SQ',
+      line1:'Holly Ln',
+      city:'Atherstone',
+      postcode:'CV9 2SQ'
+    },
+    {
+      keys:['bolton'],
+      name:'Aldi Stores Limited Bolton',
+      address:'Bridgewater Ave, Bolton, BL5 1EE',
+      line1:'Bridgewater Ave',
+      city:'Bolton',
+      postcode:'BL5 1EE'
+    },
+  ];
+
+  function lookupAldi(rdc){
+    const s=String(rdc||'').toLowerCase();
+    for(const site of ALDI_SITES){
+      if(site.keys.some(k=>s.includes(k))) return site;
+    }
+    // Fallback — return Sawley as default with a note
+    return {...ALDI_SITES[0], delivNotes:'Unknown Aldi site: '+rdc};
+  }
+
   const EUROPOOL_DEPOT={
     name:'EuroPool',
     address:'Unit 5 Sence Ct, Bardon Hill, Coalville, LE67 1GZ',
@@ -380,20 +409,21 @@ function parseEuroPool(wb){
     postcode:'LE67 1GZ'
   };
 
+  const PALLETS_PER_LOAD=33;
+
   data.forEach(r=>{
-    // Skip header or empty rows
-    const haulier=String(r['Haulier']||'').trim();
-    const salesDoc=String(r['Sales Document']||'').trim();
-    const shipNum=String(r['Shipment Number']||'').trim();
-    const aldiRDC=String(r['Aldi RDC Collection point']||'').trim();
-    const epsDepot=String(r['EPS Return Depot']||'').trim();
+    const salesDoc  =String(r['Sales Document']||'').trim();
+    const shipNum   =String(r['Shipment Number']||'').trim();
+    const aldiRDC   =String(r['Aldi RDC Collection point']||'').trim();
     const loadingDate=r['Loading date'];
 
-    if(!shipNum||!salesDoc) return; // skip blank/header rows
-    if(isNaN(Number(shipNum))) return; // skip non-numeric shipment rows
+    if(!shipNum||!salesDoc) return;
+    if(isNaN(Number(shipNum))) return;
 
     const collDate=serialToDate(loadingDate);
     if(!pdate&&collDate) pdate=collDate;
+
+    const aldiSite=lookupAldi(aldiRDC);
 
     out.push({
       ship:           shipNum,
@@ -402,16 +432,14 @@ function parseEuroPool(wb){
       delivRef:       salesDoc,
       customer:       'EuroPool',
       customerCode:   'EUROPOOL',
-      // Pickup = Aldi Sawley (we collect from Aldi on behalf of EuroPool)
       pickupDate:     collDate,
-      pickupName:     ALDI_SAWLEY.name,
-      pickupAddress:  ALDI_SAWLEY.address,
-      pickupLine1:    ALDI_SAWLEY.line1,
-      pickupPostcode: ALDI_SAWLEY.postcode,
-      pickupCity:     ALDI_SAWLEY.city,
+      pickupName:     aldiSite.name,
+      pickupAddress:  aldiSite.address,
+      pickupLine1:    aldiSite.line1,
+      pickupPostcode: aldiSite.postcode,
+      pickupCity:     aldiSite.city,
       pickupTime:     '',
       pickupTimeEnd:  '',
-      // Delivery = EuroPool depot at Bardon Hill
       delivName:      EUROPOOL_DEPOT.name,
       delivDate:      collDate,
       delivAddress:   EUROPOOL_DEPOT.address,
@@ -419,12 +447,12 @@ function parseEuroPool(wb){
       postal:         EUROPOOL_DEPOT.postcode,
       delivTimeStart: '',
       delivTimeEnd:   '',
-      delivNotes:     aldiRDC?'Collection: '+aldiRDC:'',
+      delivNotes:     aldiSite.delivNotes||'',
       collDate:       collDate,
       checkIn:        '',
-      pallets:        0,
-      weightKg:       0,
-      netWeight:      0,
+      pallets:        PALLETS_PER_LOAD,
+      weightKg:       PALLETS_PER_LOAD*200,
+      netWeight:      PALLETS_PER_LOAD*200,
     });
   });
 
