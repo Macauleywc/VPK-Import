@@ -798,13 +798,10 @@ function dlXLSX_Qargo(){
 
   function qDate(ddmmyyyy){
     if(!ddmmyyyy)return '';
-    // Normalise separator — handle DD/MM/YYYY and DD-MM-YYYY
     const p=String(ddmmyyyy).split(/[\/\-]/);
     if(p.length!==3)return ddmmyyyy;
-    // If year is first (YYYY-MM-DD), reorder to MM/DD/YYYY
-    if(p[0].length===4) return p[1]+'/'+p[2]+'/'+p[0];
-    // Otherwise DD/MM/YYYY or DD-MM-YYYY → MM/DD/YYYY
-    return p[1]+'/'+p[0]+'/'+p[2];
+    if(p[0].length===4) return p[0]+'-'+p[1]+'-'+p[2];
+    return p[2]+'-'+p[1]+'-'+p[0];
   }
 
   const dataRows=rows.map(r=>{
