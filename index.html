@@ -809,7 +809,7 @@ function dlXLSX_Qargo(){
     row[4]=r.customerCode||'';                           // customer_code
     row[5]=r.customer||'';                               // customer_name
     row[6]=r.jnyRef||r.ship||'';                        // customer_reference_number
-    row[7]=r.orderRef||r.ship||'';                      // order_reference_number
+    row[7]=r.ship||r.orderRef||'';                      // order_reference_number = load/job number groups stops in Qargo
     row[36]=qDate(r.pickupDate||r.collDate);            // pickup_date
     row[37]=r.pickupTime||r.checkIn||'';               // pickup_time_start
     row[38]=r.pickupTimeEnd||'';                        // pickup_time_end
