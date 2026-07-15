@@ -361,71 +361,76 @@ function parseEuroPool(wb){
   const ws=wb.Sheets[wb.SheetNames[0]];
   if(!ws||!ws['!ref']) return [];
 
-  // Use header:1 so we get raw arrays — headers in row 0
   const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
   if(data.length<2) return [];
 
-  // Find header row (contains REFERNENCE or COLLECT)
-  let headerIdx=-1;
-  let colRef=-1,colRef2=-1,colCollect=-1,colDeliver=-1;
-  for(let i=0;i<data.length;i++){
-    const row=data[i].map(c=>String(c||'').toUpperCase().trim());
-    // Look for the COLLECT or REFERNENCE column (note their typo)
-    const cIdx=row.findIndex(c=>c==='COLLECT'||c.includes('COLLECT'));
-    const rIdx=row.findIndex(c=>c.includes('REFERNENCE')||c.includes('REFERENCE')&&!c.includes('2'));
-    if(cIdx>-1||rIdx>-1){
-      headerIdx=i;
-      colRef=rIdx>-1?rIdx:row.findIndex(c=>c.includes('REFERNENCE'));
-      colRef2=row.findIndex(c=>c.includes('REFERENCE 2')||c.includes('REFERENCE2'));
-      colCollect=cIdx>-1?cIdx:row.findIndex(c=>c.includes('COLLECT'));
-      colDeliver=row.findIndex(c=>c.includes('DELIVER'));
-      break;
+  // Find the header row
+  let headerIdx=-1, headers=[];
+  for(let i=0;i<Math.min(5,data.length);i++){
+    const row=data[i].map(c=>String(c||'').trim());
+    if(row.some(c=>/refern|reference|shipment|collect|haulier/i.test(c))){
+      headerIdx=i; headers=row; break;
     }
   }
+  if(headerIdx===-1){ showErr('EuroPool: could not find header row.'); return []; }
 
-  // Fallback to known column positions if header detection fails
-  if(headerIdx===-1){
-    headerIdx=0;
-    colRef=2; colRef2=3; colCollect=4; colDeliver=5;
+  // Map column names to indices (handles both file formats)
+  function col(patterns){
+    for(const p of patterns){
+      const i=headers.findIndex(h=>new RegExp(p,'i').test(h));
+      if(i>-1) return i;
+    }
+    return -1;
   }
 
-  const out=[];
+  // Format 1: REFERNENCE / REFERENCE 2 / COLLECT / DELIVER (no date)
+  // Format 2: Sales Document / Shipment Number / Aldi RDC Collection point / Collection date
+  const colShip    = col(['shipment.number','shipment','refernence','reference(?!.+2)']);
+  const colRef2    = col(['sales.document','reference.2','reference2']);
+  const colCollect = col(['aldi.rdc','collect']);
+  const colDate    = col(['collection.date','collect.*date','date']);
 
-  // Aldi collection point lookup
   const ALDI_SITES=[
-    {keys:['sawley','derby'],         name:'Aldi Stores Limited Sawley DSP',  address:'Tamworth Rd, Derby, DE72 2HP',       line1:'Tamworth Rd',       city:'Derby',      postcode:'DE72 2HP'},
-    {keys:['atherstone'],             name:'Aldi Stores Limited Atherstone',  address:'Holly Ln, Atherstone, CV9 2SQ',      line1:'Holly Ln',          city:'Atherstone', postcode:'CV9 2SQ'},
-    {keys:['bolton'],                 name:'Aldi Stores Limited Bolton',       address:'Bridgewater Ave, Bolton, BL5 1EE',   line1:'Bridgewater Ave',   city:'Bolton',     postcode:'BL5 1EE'},
+    {keys:['sawley','derby'],    name:'Aldi Stores Limited Sawley DSP', address:'Tamworth Rd, Derby, DE72 2HP',     line1:'Tamworth Rd',     city:'Derby',      postcode:'DE72 2HP'},
+    {keys:['atherstone'],        name:'Aldi Stores Limited Atherstone', address:'Holly Ln, Atherstone, CV9 2SQ',    line1:'Holly Ln',        city:'Atherstone', postcode:'CV9 2SQ'},
+    {keys:['bolton'],            name:'Aldi Stores Limited Bolton',      address:'Bridgewater Ave, Bolton, BL5 1EE', line1:'Bridgewater Ave', city:'Bolton',     postcode:'BL5 1EE'},
   ];
   function lookupAldi(rdc){
     const s=String(rdc||'').toLowerCase();
     for(const site of ALDI_SITES) if(site.keys.some(k=>s.includes(k))) return site;
-    return {...ALDI_SITES[0],delivNotes:'Unknown Aldi site: '+rdc};
+    return {...ALDI_SITES[0], delivNotes:'Unknown Aldi site: '+rdc};
   }
 
   const EUROPOOL_DEPOT={
     name:'EuroPool',
     address:'Unit 5 Sence Ct, Bardon Hill, Coalville, LE67 1GZ',
-    line1:'Unit 5 Sence Ct',
-    city:'Coalville',
-    postcode:'LE67 1GZ'
+    line1:'Unit 5 Sence Ct', city:'Coalville', postcode:'LE67 1GZ'
   };
-
   const PALLETS_PER_LOAD=33;
 
-  // Today's date as DD/MM/YYYY (no loading date in file)
   const today=new Date();
   const todayStr=pad(today.getDate())+'/'+pad(today.getMonth()+1)+'/'+today.getFullYear();
-  if(!pdate) pdate=todayStr;
 
+  const out=[];
   for(let i=headerIdx+1;i<data.length;i++){
     const row=data[i];
-    const shipNum=String(row[colRef]||'').trim();
-    const ref2   =String(row[colRef2]||'').trim();
-    const collect=String(row[colCollect]||'').trim();
-    const deliver=String(row[colDeliver]||'').trim();
+    const shipNum=String(colShip>-1?row[colShip]:'').trim();
+    const ref2   =String(colRef2>-1?row[colRef2]:'').trim();
+    const collect=String(colCollect>-1?row[colCollect]:'').trim();
+    const rawDate=colDate>-1?row[colDate]:null;
 
     if(!shipNum||isNaN(Number(shipNum))) continue;
+
+    // Parse date — may be a Date object, serial, or string
+    let collDate=todayStr;
+    if(rawDate){
+      if(rawDate instanceof Date){
+        collDate=pad(rawDate.getDate())+'/'+pad(rawDate.getMonth()+1)+'/'+rawDate.getFullYear();
+      } else {
+        collDate=serialToDate(rawDate)||todayStr;
+      }
+    }
+    if(!pdate) pdate=collDate;
 
     const aldiSite=lookupAldi(collect);
 
@@ -436,7 +441,7 @@ function parseEuroPool(wb){
       delivRef:       ref2||shipNum,
       customer:       'EuroPool',
       customerCode:   'EUROPOOL',
-      pickupDate:     todayStr,
+      pickupDate:     collDate,
       pickupName:     aldiSite.name,
       pickupAddress:  aldiSite.address,
       pickupLine1:    aldiSite.line1,
@@ -445,14 +450,14 @@ function parseEuroPool(wb){
       pickupTime:     '',
       pickupTimeEnd:  '',
       delivName:      EUROPOOL_DEPOT.name,
-      delivDate:      todayStr,
+      delivDate:      collDate,
       delivAddress:   EUROPOOL_DEPOT.address,
       delivCity:      EUROPOOL_DEPOT.city,
       postal:         EUROPOOL_DEPOT.postcode,
       delivTimeStart: '',
       delivTimeEnd:   '',
       delivNotes:     aldiSite.delivNotes||'',
-      collDate:       todayStr,
+      collDate:       collDate,
       checkIn:        '',
       pallets:        PALLETS_PER_LOAD,
       weightKg:       PALLETS_PER_LOAD*200,
