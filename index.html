@@ -584,24 +584,50 @@ function parseNestle(wb){
   return out;
 }
 
-/* ─── INSTARMAC PARSER (FIXED) ─── */
+/* ─── INSTARMAC PARSER ─── */
 function parseInstarmac(wb){
   const ws=wb.Sheets[wb.SheetNames[0]];
   if(!ws||!ws['!ref'])return[];
   const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
   const out=[];
 
-  // Handle numeric fraction OR string time range
+  // Find first header row — look for 'Order No' in any column
+  let headerIdx=-1, colOffset=0;
+  for(let i=0;i<data.length;i++){
+    const row=data[i];
+    for(let c=0;c<row.length;c++){
+      if(String(row[c]||'').trim()==='Order No'){
+        headerIdx=i; colOffset=c; break;
+      }
+    }
+    if(headerIdx>-1) break;
+  }
+  if(headerIdx===-1){showErr('Instarmac: could not find header row.');return[];}
+
+  // Column indices relative to colOffset
+  // Order No=0, Customer=1, Address=2, Postcode=3, Del/Col=4, Weight=5, Pallets=6,
+  // Opening Time=7, Route No=8, Moffet=9, Collection Time=10 (add info missing in this format)
+  const C={
+    orderNo:  colOffset+0,
+    customer: colOffset+1,
+    city:     colOffset+2,
+    postcode: colOffset+3,
+    delCol:   colOffset+4,
+    weight:   colOffset+5,
+    pallets:  colOffset+6,
+    opening:  colOffset+7,
+    routeNo:  colOffset+8,
+    moffet:   colOffset+9,
+    collTime: colOffset+10,
+  };
+
   function parseTimeRange(val){
     if(val===null||val===undefined||val==='')return{start:'',end:''};
-    // Numeric fraction from XLSX (e.g. 0.25 = 06:00)
-    if(typeof val==='number'){return{start:fracToHHMM(val),end:''};}
-    if(val instanceof Date){return{start:fracToHHMM(val),end:''};}
+    if(typeof val==='number')return{start:fracToHHMM(val),end:''};
+    if(val instanceof Date)return{start:fracToHHMM(val),end:''};
     const s=String(val).trim();
-    // Range "HH:MM-HH:MM"
     const rangeM=s.match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/);
     if(rangeM)return{start:rangeM[1].padStart(5,'0'),end:rangeM[2].padStart(5,'0')};
-    // Single "09:00" or "09:00am"
     const ampm=s.match(/^(\d{1,2}):(\d{2})(am|pm)?$/i);
     if(ampm){
       let h=parseInt(ampm[1]),m=parseInt(ampm[2]);
@@ -615,69 +641,76 @@ function parseInstarmac(wb){
   const today=new Date();
   const todayStr=pad(today.getDate())+'/'+pad(today.getMonth()+1)+'/'+today.getFullYear();
 
-  data.forEach((row,ri)=>{
-    if(!row||!row[0])return;
-    if(String(row[0]).trim()==='Order No')return;
-    const orderNo=parseInt(row[0]);
-    if(isNaN(orderNo))return;
+  for(let i=headerIdx+1;i<data.length;i++){
+    const row=data[i];
+    if(!row||row.every(c=>c===null||c==='')) continue;
 
-    const customer    =String(row[1]||'').trim();
-    const city        =String(row[2]||'').trim();
-    const postcode    =String(row[3]||'').trim();
-    const delCol      =String(row[4]||'').trim();
-    const weight      =parseFloat(String(row[5]||'').replace(/,/g,''))||0;
-    const pallets     =parseFloat(String(row[6]||'').replace(/,/g,''))||0;
-    const openingTime =row[7];          // delivery time window — may be string
-    const routeNo     =row[8] instanceof Date
-      ? pad(row[8].getDate())+'/'+pad(row[8].getMonth()+1)+'/'+row[8].getFullYear()
-      : String(row[8]||'').trim();
-    const moffet      =String(row[9]||'').trim();
-    const addInfo     =String(row[10]||'').trim();
-    // FIX: Collection Time is column index 10 (0-based) — was incorrectly row[11]
-    const collTimeRaw =row[10];         // col K = index 10
+    // Skip repeated header rows
+    const orderNoVal=String(row[C.orderNo]||'').trim();
+    if(orderNoVal==='Order No') continue;
 
-    if(delCol.toUpperCase()!=='D')return;
+    const orderNo=parseInt(orderNoVal);
+    if(isNaN(orderNo)) continue;
 
-    const delivTimes  =parseTimeRange(openingTime);
-    const pickupTimes =parseTimeRange(collTimeRaw);
+    const customer   =String(row[C.customer]||'').trim();
+    const city       =String(row[C.city]||'').trim();
+    const postcode   =String(row[C.postcode]||'').trim();
+    const delCol     =String(row[C.delCol]||'').trim();
+    const weight     =parseFloat(String(row[C.weight]||'').replace(/,/g,''))||0;
+    const pallets    =parseFloat(String(row[C.pallets]||'').replace(/,/g,''))||0;
+    const openingTime=row[C.opening];
+    const routeNoRaw =row[C.routeNo];
+    const moffet     =String(row[C.moffet]||'').trim();
+    const collTimeRaw=row[C.collTime];
+
+    // Skip collection rows if Del/Col is explicitly 'C'; allow null/empty (this format omits it)
+    if(delCol.toUpperCase()==='C') continue;
+
+    const routeNo=routeNoRaw instanceof Date
+      ? pad(routeNoRaw.getDate())+'/'+pad(routeNoRaw.getMonth()+1)+'/'+routeNoRaw.getFullYear()
+      : String(routeNoRaw||'').trim();
+
+    const delivTimes =parseTimeRange(openingTime);
+    const pickupTimes=parseTimeRange(collTimeRaw);
 
     const notes=[
       moffet.toUpperCase()==='Y'?'Moffet required':'',
-      addInfo&&addInfo.toLowerCase()!=='n/a'?addInfo:'',
     ].filter(Boolean).join('; ');
 
+    if(!pdate) pdate=todayStr;
+
     out.push({
-      loadNum:    String(routeNo),
-      ship:       String(routeNo),
-      orderRef:   String(routeNo),
-      jnyRef:     String(orderNo),
-      delivRef:   String(orderNo),
-      customer:   'Instarmac',
-      customerCode:'INSTARMAC',
-      pickupDate: todayStr,
-      pickupTime: pickupTimes.start,
-      pickupTimeEnd:pickupTimes.end,
-      pickupName: 'Instarmac Group',
-      pickupAddress:'Instarmac Group, Trinity Way, Tamworth, B78 3HG',
-      pickupLine1:'Trinity Way',
+      loadNum:       String(routeNo),
+      ship:          String(routeNo),
+      orderRef:      String(routeNo),
+      jnyRef:        String(orderNo),
+      delivRef:      String(orderNo),
+      customer:      'Instarmac',
+      customerCode:  'INSTARMAC',
+      pickupDate:    todayStr,
+      pickupTime:    pickupTimes.start,
+      pickupTimeEnd: pickupTimes.end,
+      pickupName:    'Instarmac Group',
+      pickupAddress: 'Instarmac Group, Trinity Way, Tamworth, B78 3HG',
+      pickupLine1:   'Trinity Way',
       pickupPostcode:'B78 3HG',
-      pickupCity: 'Tamworth',
-      delivName:  customer,
-      delivDate:  todayStr,
+      pickupCity:    'Tamworth',
+      delivName:     customer,
+      delivDate:     todayStr,
       delivTimeStart:delivTimes.start,
-      delivTimeEnd:delivTimes.end,
-      delivAddress:city,
-      delivCity:  city,
-      postal:     postcode,
+      delivTimeEnd:  delivTimes.end,
+      delivAddress:  city,
+      delivCity:     city,
+      postal:        postcode,
       pallets,
-      weightKg:   weight,
-      delivNotes: notes,
-      collDate:   todayStr,
-      checkIn:    pickupTimes.start,
-      delivTime:  delivTimes.start,
-      netWeight:  weight,
+      weightKg:      weight,
+      delivNotes:    notes,
+      collDate:      todayStr,
+      checkIn:       pickupTimes.start,
+      delivTime:     delivTimes.start,
+      netWeight:     weight,
     });
-  });
+  }
   return out;
 }
 
