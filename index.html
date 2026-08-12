@@ -361,8 +361,9 @@ function parseEuroPool(wb){
   const ws=wb.Sheets[wb.SheetNames[0]];
   if(!ws||!ws['!ref']) return [];
 
-  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
-  if(data.length<1) return [];
+  // Use raw:true so numbers stay numbers and dates stay serials
+  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
+  if(!data.length) return [];
 
   const ALDI_SITES=[
     {keys:['sawley','derby'],    name:'Aldi Stores Limited Sawley DSP', address:'Tamworth Rd, Derby, DE72 2HP',     line1:'Tamworth Rd',     city:'Derby',      postcode:'DE72 2HP'},
@@ -380,117 +381,88 @@ function parseEuroPool(wb){
     address:'Unit 5 Sence Ct, Bardon Hill, Coalville, LE67 1GZ',
     line1:'Unit 5 Sence Ct', city:'Coalville', postcode:'LE67 1GZ'
   };
-  const PALLETS_PER_LOAD=33;
+  const PALLETS=33;
 
   const today=new Date();
   const todayStr=pad(today.getDate())+'/'+pad(today.getMonth()+1)+'/'+today.getFullYear();
 
-  function parseAnyDate(val){
-    if(!val) return todayStr;
-    if(val instanceof Date){
-      return pad(val.getDate())+'/'+pad(val.getMonth()+1)+'/'+val.getFullYear();
+  // Convert Excel date serial to DD/MM/YYYY
+  function excelDate(v){
+    if(!v) return todayStr;
+    if(typeof v==='number'&&v>40000){
+      const d=new Date(Math.round((v-25569)*86400*1000));
+      return pad(d.getUTCDate())+'/'+pad(d.getUTCMonth()+1)+'/'+d.getUTCFullYear();
     }
-    const n=Number(val);
-    if(!isNaN(n)&&n>40000) return serialToDate(n);
-    return serialToDate(val)||todayStr;
+    if(typeof v==='string') return serialToDate(v)||todayStr;
+    return todayStr;
   }
 
-  // Detect format by scanning for a header row first
-  let headerIdx=-1, headers=[];
-  for(let i=0;i<Math.min(5,data.length);i++){
-    const row=(data[i]||[]).map(c=>String(c||'').trim());
-    if(row.some(c=>/refern|reference|shipment|collect|haulier|sales.doc/i.test(c))){
-      headerIdx=i; headers=row; break;
-    }
+  function makeRow(shipNum,ref2,collDate,aldiSite){
+    return{
+      ship:shipNum,orderRef:shipNum,jnyRef:ref2||shipNum,delivRef:ref2||shipNum,
+      customer:'EuroPool',customerCode:'EUROPOOL',
+      pickupDate:collDate,pickupName:aldiSite.name,pickupAddress:aldiSite.address,
+      pickupLine1:aldiSite.line1,pickupPostcode:aldiSite.postcode,pickupCity:aldiSite.city,
+      pickupTime:'',pickupTimeEnd:'',
+      delivName:EUROPOOL_DEPOT.name,delivDate:collDate,delivAddress:EUROPOOL_DEPOT.address,
+      delivCity:EUROPOOL_DEPOT.city,postal:EUROPOOL_DEPOT.postcode,
+      delivTimeStart:'',delivTimeEnd:'',delivNotes:aldiSite.delivNotes||'',
+      collDate,checkIn:'',pallets:PALLETS,weightKg:PALLETS*200,netWeight:PALLETS*200,
+    };
   }
 
   const out=[];
 
+  // Check if there's a header row (contains text like 'Shipment' or 'Collect' or 'Haulier')
+  let headerIdx=-1, colShip=-1, colRef2=-1, colCollect=-1, colDate=-1;
+  for(let i=0;i<Math.min(5,data.length);i++){
+    const row=(data[i]||[]).map(c=>String(c||'').toLowerCase().trim());
+    if(row.some(c=>c.includes('shipment')||c.includes('refern')||c.includes('collect')||c.includes('haulier'))){
+      headerIdx=i;
+      colShip   =row.findIndex(c=>c.includes('shipment')||c==='refernence');
+      colRef2   =row.findIndex(c=>c.includes('sales')||c.includes('reference 2'));
+      colCollect=row.findIndex(c=>c.includes('aldi')||c==='collect');
+      colDate   =row.findIndex(c=>c.includes('collection date')||c.includes('collect')&&c.includes('date'));
+      break;
+    }
+  }
+
   if(headerIdx>-1){
     // ── HEADED FORMAT ──
-    // Map headers to column indices
-    function col(patterns){
-      for(const p of patterns){
-        const i=headers.findIndex(h=>new RegExp(p,'i').test(h));
-        if(i>-1) return i;
-      }
-      return -1;
-    }
-    const colShip    =col(['shipment.number','shipment','refernence','reference(?!.+2)']);
-    const colRef2    =col(['sales.document','reference.2','reference2']);
-    const colCollect =col(['aldi.rdc','collect(?!.*date)']);
-    const colDate    =col(['collection.date','collect.*date']);
-
     for(let i=headerIdx+1;i<data.length;i++){
       const row=data[i]||[];
-      const shipNum=String(colShip>-1?row[colShip]:'').trim();
-      const ref2   =String(colRef2>-1?row[colRef2]:'').trim();
-      const collect=String(colCollect>-1?row[colCollect]:'').trim();
+      const shipNum=String(colShip>-1&&row[colShip]!=null?row[colShip]:'').trim();
+      const ref2   =String(colRef2>-1&&row[colRef2]!=null?row[colRef2]:'').trim();
+      const collect=String(colCollect>-1&&row[colCollect]!=null?row[colCollect]:'').trim();
       const rawDate=colDate>-1?row[colDate]:null;
       if(!shipNum||isNaN(Number(shipNum))) continue;
-      const collDate=parseAnyDate(rawDate);
+      const collDate=excelDate(rawDate);
       if(!pdate) pdate=collDate;
-      const aldiSite=lookupAldi(collect);
-      out.push(makeRow(shipNum,ref2,collDate,aldiSite,EUROPOOL_DEPOT,PALLETS_PER_LOAD));
+      out.push(makeRow(shipNum,ref2,collDate,lookupAldi(collect)));
     }
   } else {
     // ── NO-HEADER FORMAT ──
-    // Find first data row by looking for a numeric Sales Document (~330xxxxxx)
-    // Columns (by absolute index): haulier=4, salesDoc=5, shipNum=6, aldiSite=7, depot=8, collDate=9
+    // Structure: [...nulls, Haulier, SalesDoc(~330M), ShipNum(~4M), AldiSite, Depot, CollDate, DelivDate]
     for(let i=0;i<data.length;i++){
       const row=data[i]||[];
-      // Find the offset — scan for a large numeric value (Sales Document ~330000000)
-      let offset=-1;
+      // Find Sales Document column — large number > 300,000,000
+      let salesDocCol=-1;
       for(let c=0;c<row.length;c++){
-        const n=Number(row[c]);
-        if(!isNaN(n)&&n>300000000){ offset=c-1; break; } // salesDoc is 1 after haulier
+        if(typeof row[c]==='number'&&row[c]>300000000){salesDocCol=c;break;}
       }
-      if(offset<0) continue;
-      const salesDoc =String(row[offset+1]||'').trim();
-      const shipNum  =String(row[offset+2]||'').trim();
-      const collect  =String(row[offset+3]||'').trim();
-      const rawDate  =row[offset+5]||row[offset+4];
+      if(salesDocCol===-1) continue;
+      const salesDoc=String(row[salesDocCol]);
+      const shipNum =String(row[salesDocCol+1]||'').trim();
+      const collect =String(row[salesDocCol+2]||'').trim();
+      const rawDate =row[salesDocCol+4]||row[salesDocCol+3];
       if(!shipNum||isNaN(Number(shipNum))) continue;
-      const collDate=parseAnyDate(rawDate);
+      const collDate=excelDate(rawDate);
       if(!pdate) pdate=collDate;
-      const aldiSite=lookupAldi(collect);
-      out.push(makeRow(shipNum,salesDoc,collDate,aldiSite,EUROPOOL_DEPOT,PALLETS_PER_LOAD));
+      out.push(makeRow(shipNum,salesDoc,collDate,lookupAldi(collect)));
     }
   }
 
   return out;
-
-  function makeRow(shipNum,ref2,collDate,aldiSite,depot,pallets){
-    return {
-      ship:           shipNum,
-      orderRef:       shipNum,
-      jnyRef:         ref2||shipNum,
-      delivRef:       ref2||shipNum,
-      customer:       'EuroPool',
-      customerCode:   'EUROPOOL',
-      pickupDate:     collDate,
-      pickupName:     aldiSite.name,
-      pickupAddress:  aldiSite.address,
-      pickupLine1:    aldiSite.line1,
-      pickupPostcode: aldiSite.postcode,
-      pickupCity:     aldiSite.city,
-      pickupTime:     '',
-      pickupTimeEnd:  '',
-      delivName:      depot.name,
-      delivDate:      collDate,
-      delivAddress:   depot.address,
-      delivCity:      depot.city,
-      postal:         depot.postcode,
-      delivTimeStart: '',
-      delivTimeEnd:   '',
-      delivNotes:     aldiSite.delivNotes||'',
-      collDate:       collDate,
-      checkIn:        '',
-      pallets:        pallets,
-      weightKg:       pallets*200,
-      netWeight:      pallets*200,
-    };
-  }
 }
 
 /* ─── SAM MOULDINGS PARSER ─── */
