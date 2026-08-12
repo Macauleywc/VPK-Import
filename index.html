@@ -361,34 +361,8 @@ function parseEuroPool(wb){
   const ws=wb.Sheets[wb.SheetNames[0]];
   if(!ws||!ws['!ref']) return [];
 
-  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-  if(data.length<2) return [];
-
-  // Find the header row
-  let headerIdx=-1, headers=[];
-  for(let i=0;i<Math.min(5,data.length);i++){
-    const row=data[i].map(c=>String(c||'').trim());
-    if(row.some(c=>/refern|reference|shipment|collect|haulier/i.test(c))){
-      headerIdx=i; headers=row; break;
-    }
-  }
-  if(headerIdx===-1){ showErr('EuroPool: could not find header row.'); return []; }
-
-  // Map column names to indices (handles both file formats)
-  function col(patterns){
-    for(const p of patterns){
-      const i=headers.findIndex(h=>new RegExp(p,'i').test(h));
-      if(i>-1) return i;
-    }
-    return -1;
-  }
-
-  // Format 1: REFERNENCE / REFERENCE 2 / COLLECT / DELIVER (no date)
-  // Format 2: Sales Document / Shipment Number / Aldi RDC Collection point / Collection date
-  const colShip    = col(['shipment.number','shipment','refernence','reference(?!.+2)']);
-  const colRef2    = col(['sales.document','reference.2','reference2']);
-  const colCollect = col(['aldi.rdc','collect']);
-  const colDate    = col(['collection.date','collect.*date','date']);
+  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
+  if(data.length<1) return [];
 
   const ALDI_SITES=[
     {keys:['sawley','derby'],    name:'Aldi Stores Limited Sawley DSP', address:'Tamworth Rd, Derby, DE72 2HP',     line1:'Tamworth Rd',     city:'Derby',      postcode:'DE72 2HP'},
@@ -411,30 +385,83 @@ function parseEuroPool(wb){
   const today=new Date();
   const todayStr=pad(today.getDate())+'/'+pad(today.getMonth()+1)+'/'+today.getFullYear();
 
-  const out=[];
-  for(let i=headerIdx+1;i<data.length;i++){
-    const row=data[i];
-    const shipNum=String(colShip>-1?row[colShip]:'').trim();
-    const ref2   =String(colRef2>-1?row[colRef2]:'').trim();
-    const collect=String(colCollect>-1?row[colCollect]:'').trim();
-    const rawDate=colDate>-1?row[colDate]:null;
-
-    if(!shipNum||isNaN(Number(shipNum))) continue;
-
-    // Parse date — may be a Date object, serial, or string
-    let collDate=todayStr;
-    if(rawDate){
-      if(rawDate instanceof Date){
-        collDate=pad(rawDate.getDate())+'/'+pad(rawDate.getMonth()+1)+'/'+rawDate.getFullYear();
-      } else {
-        collDate=serialToDate(rawDate)||todayStr;
-      }
+  function parseAnyDate(val){
+    if(!val) return todayStr;
+    if(val instanceof Date){
+      return pad(val.getDate())+'/'+pad(val.getMonth()+1)+'/'+val.getFullYear();
     }
-    if(!pdate) pdate=collDate;
+    const n=Number(val);
+    if(!isNaN(n)&&n>40000) return serialToDate(n);
+    return serialToDate(val)||todayStr;
+  }
 
-    const aldiSite=lookupAldi(collect);
+  // Detect format by scanning for a header row first
+  let headerIdx=-1, headers=[];
+  for(let i=0;i<Math.min(5,data.length);i++){
+    const row=(data[i]||[]).map(c=>String(c||'').trim());
+    if(row.some(c=>/refern|reference|shipment|collect|haulier|sales.doc/i.test(c))){
+      headerIdx=i; headers=row; break;
+    }
+  }
 
-    out.push({
+  const out=[];
+
+  if(headerIdx>-1){
+    // ── HEADED FORMAT ──
+    // Map headers to column indices
+    function col(patterns){
+      for(const p of patterns){
+        const i=headers.findIndex(h=>new RegExp(p,'i').test(h));
+        if(i>-1) return i;
+      }
+      return -1;
+    }
+    const colShip    =col(['shipment.number','shipment','refernence','reference(?!.+2)']);
+    const colRef2    =col(['sales.document','reference.2','reference2']);
+    const colCollect =col(['aldi.rdc','collect(?!.*date)']);
+    const colDate    =col(['collection.date','collect.*date']);
+
+    for(let i=headerIdx+1;i<data.length;i++){
+      const row=data[i]||[];
+      const shipNum=String(colShip>-1?row[colShip]:'').trim();
+      const ref2   =String(colRef2>-1?row[colRef2]:'').trim();
+      const collect=String(colCollect>-1?row[colCollect]:'').trim();
+      const rawDate=colDate>-1?row[colDate]:null;
+      if(!shipNum||isNaN(Number(shipNum))) continue;
+      const collDate=parseAnyDate(rawDate);
+      if(!pdate) pdate=collDate;
+      const aldiSite=lookupAldi(collect);
+      out.push(makeRow(shipNum,ref2,collDate,aldiSite,EUROPOOL_DEPOT,PALLETS_PER_LOAD));
+    }
+  } else {
+    // ── NO-HEADER FORMAT ──
+    // Find first data row by looking for a numeric Sales Document (~330xxxxxx)
+    // Columns (by absolute index): haulier=4, salesDoc=5, shipNum=6, aldiSite=7, depot=8, collDate=9
+    for(let i=0;i<data.length;i++){
+      const row=data[i]||[];
+      // Find the offset — scan for a large numeric value (Sales Document ~330000000)
+      let offset=-1;
+      for(let c=0;c<row.length;c++){
+        const n=Number(row[c]);
+        if(!isNaN(n)&&n>300000000){ offset=c-1; break; } // salesDoc is 1 after haulier
+      }
+      if(offset<0) continue;
+      const salesDoc =String(row[offset+1]||'').trim();
+      const shipNum  =String(row[offset+2]||'').trim();
+      const collect  =String(row[offset+3]||'').trim();
+      const rawDate  =row[offset+5]||row[offset+4];
+      if(!shipNum||isNaN(Number(shipNum))) continue;
+      const collDate=parseAnyDate(rawDate);
+      if(!pdate) pdate=collDate;
+      const aldiSite=lookupAldi(collect);
+      out.push(makeRow(shipNum,salesDoc,collDate,aldiSite,EUROPOOL_DEPOT,PALLETS_PER_LOAD));
+    }
+  }
+
+  return out;
+
+  function makeRow(shipNum,ref2,collDate,aldiSite,depot,pallets){
+    return {
       ship:           shipNum,
       orderRef:       shipNum,
       jnyRef:         ref2||shipNum,
@@ -449,22 +476,21 @@ function parseEuroPool(wb){
       pickupCity:     aldiSite.city,
       pickupTime:     '',
       pickupTimeEnd:  '',
-      delivName:      EUROPOOL_DEPOT.name,
+      delivName:      depot.name,
       delivDate:      collDate,
-      delivAddress:   EUROPOOL_DEPOT.address,
-      delivCity:      EUROPOOL_DEPOT.city,
-      postal:         EUROPOOL_DEPOT.postcode,
+      delivAddress:   depot.address,
+      delivCity:      depot.city,
+      postal:         depot.postcode,
       delivTimeStart: '',
       delivTimeEnd:   '',
       delivNotes:     aldiSite.delivNotes||'',
       collDate:       collDate,
       checkIn:        '',
-      pallets:        PALLETS_PER_LOAD,
-      weightKg:       PALLETS_PER_LOAD*200,
-      netWeight:      PALLETS_PER_LOAD*200,
-    });
+      pallets:        pallets,
+      weightKg:       pallets*200,
+      netWeight:      pallets*200,
+    };
   }
-  return out;
 }
 
 /* ─── SAM MOULDINGS PARSER ─── */
