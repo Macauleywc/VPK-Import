@@ -311,6 +311,7 @@ function parseEuroPool(wb){
   const today=new Date(),todayStr=pad(today.getDate())+'/'+pad(today.getMonth()+1)+'/'+today.getFullYear();
   function excelDate(v){
     if(!v)return todayStr;
+    if(v instanceof Date)return pad(v.getUTCDate())+'/'+pad(v.getUTCMonth()+1)+'/'+v.getUTCFullYear();
     if(typeof v==='number'&&v>40000){const d=new Date(Math.round((v-25569)*86400*1000));return pad(d.getUTCDate())+'/'+pad(d.getUTCMonth()+1)+'/'+d.getUTCFullYear();}
     if(typeof v==='string')return serialToDate(v)||todayStr;
     return todayStr;
