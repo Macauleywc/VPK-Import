@@ -343,7 +343,8 @@ function parseEuroPool(wb){
       colShip    =row.findIndex(c=>c.includes('shipment')||c==='refernence');
       colSalesDoc=row.findIndex(c=>c.includes('sales')||c.includes('reference 2'));
       colCollect =row.findIndex(c=>c.includes('aldi')||c==='collect');
-      colDate    =row.findIndex(c=>c.includes('collection date')||(c.includes('collect')&&c.includes('date')));
+      colDate    =row.findIndex(c=>c.includes('collection date')||c.includes('loading date')||(c.includes('collect')&&c.includes('date')));
+      if(colDate===-1)colDate=row.findIndex(c=>c.includes('date'));
       break;
     }
   }
@@ -396,8 +397,71 @@ function parseSAM(wb){
     else if(curBlock&&c1==='Delivery Address:'){curBlock.address=cs(r,7);const rawNotes=cs(r+1,16)||cs(r,16);curBlock.notes=rawNotes;const tw=parseTimeWindow(rawNotes);curBlock.timeStart=tw.start;curBlock.timeEnd=tw.end;soBlocks.push(curBlock);curBlock=null;}
   }
   if(curBlock)soBlocks.push(curBlock);
+  // New "Loading Summary" layout (SO numbers in column C, one line per pack) — handled separately
+  if(!soBlocks.length)return parseSAMSummary(ws,R,cv,cs);
   const loadNum=cs(1,14),despatchDate=fmtDate(cv(1,21)||cs(1,21));
   soBlocks.forEach(block=>{block.soRefs.forEach((soRef,i)=>{out.push({ship:loadNum,orderRef:block.orderRefs[i]||soRef,delivRef:soRef,customer:block.customer||block.city||'SAM Customer',customerCode:'SAM',postal:block.postcode,delivCity:block.city,delivDate:block.delivDate,delivAddress:block.address||'',delivTimeStart:block.timeStart||'',delivTimeEnd:block.timeEnd||'',delivNotes:block.notes||'',collDate:despatchDate,pickupDate:despatchDate,pickupName:'SAM Mouldings',pickupAddress:'345 Torrington Ave, Coventry, CV4 9ZR',pickupLine1:'345 Torrington Ave',pickupPostcode:'CV4 9ZR',pickupCity:'Coventry',pallets:0,weightKg:0,checkIn:'',delivName:block.customer||block.city||'SAM Customer'});});});
+  return out;
+}
+
+/* ─── SAM MOULDINGS — LOADING SUMMARY LAYOUT ─── */
+function parseSAMSummary(ws,R,cv,cs){
+  const out=[];
+  function dDate(v){
+    if(v instanceof Date){const d=new Date(v.getTime()+12*3600000);return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear();}
+    if(typeof v==='number'&&v>40000){const d=new Date(Math.round((v-25569)*86400*1000));return pad(d.getUTCDate())+'/'+pad(d.getUTCMonth()+1)+'/'+d.getUTCFullYear();}
+    return v?serialToDate(v):'';
+  }
+  function toNum(s){const p=String(s||'').split('/');return p.length===3?Number(p[2]+p[1]+p[0]):0;}
+  // Load number (e.g. LN06419) — search the top rows
+  let loadNum='';
+  for(let r=0;r<=8&&!loadNum;r++)for(let c=0;c<=30;c++){const s=cs(r,c);if(/^LN\d+$/i.test(s)){loadNum=s.toUpperCase();break;}}
+  // Column positions in the Loading Summary layout (shifted automatically if the SO column moves)
+  const col={so:2,dest:8,addr:10,pc:12,pks:18,booking:23,date:25};
+  // Collection date: taken from the file name (e.g. "..._09_10_2026_...") or today
+  const m=String(fname||'').match(/(\d{2})[_\-\.](\d{2})[_\-\.](\d{4})/);
+  const today=new Date();
+  const collDate=m?m[1]+'/'+m[2]+'/'+m[3]:pad(today.getDate())+'/'+pad(today.getMonth()+1)+'/'+today.getFullYear();
+  if(!pdate)pdate=collDate;
+  // Group pack lines into one order per SO number
+  const orders=new Map();
+  for(let r=0;r<=R;r++){
+    let so='',soCol=-1;
+    for(let c=0;c<=4;c++){const s=cs(r,c);if(/^SO-\d+/.test(s)){so=s;soCol=c;break;}}
+    if(!so)continue;
+    const off=soCol-col.so;
+    const g=k=>cs(r,col[k]+off);
+    if(!orders.has(so)){
+      orders.set(so,{so,dest:g('dest'),addr:g('addr'),pc:g('pc'),booking:g('booking'),agreed:dDate(cv(r,col.date+off)),packs:0});
+    }
+    const o=orders.get(so);
+    const p=Number(cv(r,col.pks+off));if(!isNaN(p))o.packs+=p;
+  }
+  // Consolidate: one Qargo order per postcode + delivery date (multiple SOs to the same drop become one stop)
+  const drops=new Map();
+  orders.forEach(o=>{
+    let delivDate=o.agreed||collDate,late='';
+    // A delivery can't be before collection — use the collection date and keep the agreed date in the notes
+    if(o.agreed&&toNum(o.agreed)<toNum(collDate)){delivDate=collDate;late=o.agreed;}
+    const key=o.pc.replace(/\s+/g,'').toUpperCase()+'|'+delivDate;
+    if(!drops.has(key))drops.set(key,{dest:o.dest,addr:o.addr,pc:o.pc,delivDate,sos:[],packs:0,lines:[]});
+    const d=drops.get(key);
+    d.sos.push(o.so);d.packs+=o.packs;
+    let line=o.so+': '+o.packs+' packs';
+    if(late)line+=' (agreed '+late+')';
+    if(o.booking)line+=' booking '+o.booking;
+    d.lines.push(line);
+  });
+  drops.forEach(d=>{
+    const soList=d.sos.join(' ');
+    const notes='Total packs: '+d.packs+(d.sos.length>1?' | '+d.lines.join(' | '):' | '+d.lines[0]);
+    out.push({ship:loadNum,orderRef:d.sos[0],jnyRef:loadNum?loadNum+' '+soList:soList,delivRef:soList,
+      customer:'SAM Mouldings',customerCode:'SAM',
+      delivName:d.dest,delivAddress:[d.addr,d.pc].filter(Boolean).join(', '),delivCity:d.dest.replace(/^\d+\s*/,''),postal:d.pc,
+      delivDate:d.delivDate,delivTimeStart:'',delivTimeEnd:'',delivNotes:notes,
+      collDate,pickupDate:collDate,pickupName:'SAM Mouldings',pickupAddress:'345 Torrington Ave, Coventry, CV4 9ZR',pickupLine1:'345 Torrington Ave',pickupPostcode:'CV4 9ZR',pickupCity:'Coventry',
+      pallets:0,weightKg:0,checkIn:''});
+  });
   return out;
 }
 
